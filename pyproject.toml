@@ -13,6 +13,7 @@ dotenv = "^0.9.9"
 geopandas = "^1.0.1"
 matplotlib = "^3.10.0"
 seaborn = "^0.13.2"
+pyarrow = "^19.0.1"
 
 
 [tool.poetry.group.dev.dependencies]

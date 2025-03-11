@@ -506,6 +506,49 @@ class DropboxHelper:
         except dropbox.exceptions.ApiError as err:
             print(f"Failed to upload to Dropbox: {err}")
 
+    def write_bytes(self, file_bytes, dbx_path: str, directory: str, filename: str, print_success=True):
+        """
+        Uploads file bytes directly to Dropbox, using chunked upload for large files.
+
+        Args:
+            file_bytes (bytes): The content of the file to upload.
+            dbx_path (str): The base Dropbox path where the file will be saved.
+            directory (str): The directory within the base path where the file will be saved.
+            filename (str): The name of the file (e.g., 'my_file.tif').
+            print_success (bool): Whether to print a success message upon successful upload.
+        """
+        full_dropbox_path = f"{dbx_path}/{directory}/{filename}"
+        CHUNK_SIZE = 4 * 1024 * 1024  # 4 MB
+
+        try:
+            file_size = len(file_bytes)
+            if file_size <= CHUNK_SIZE:
+                # File is small enough to upload in one request.
+                self.dbx.files_upload(file_bytes, full_dropbox_path, mode=dropbox.files.WriteMode.overwrite)
+            else:
+                # Use chunked upload for large files.
+                f = io.BytesIO(file_bytes)
+                # Start the upload session with the first chunk.
+                session_start_result = self.dbx.files_upload_session_start(f.read(CHUNK_SIZE))
+                session_id = session_start_result.session_id
+                cursor = dropbox.files.UploadSessionCursor(session_id=session_id, offset=f.tell())
+                commit = dropbox.files.CommitInfo(path=full_dropbox_path, mode=dropbox.files.WriteMode.overwrite)
+                
+                while f.tell() < file_size:
+                    if (file_size - f.tell()) <= CHUNK_SIZE:
+                        # Upload the final chunk and finish the session.
+                        self.dbx.files_upload_session_finish(f.read(CHUNK_SIZE), cursor, commit)
+                    else:
+                        # Append the next chunk.
+                        self.dbx.files_upload_session_append_v2(f.read(CHUNK_SIZE), cursor)
+                        cursor.offset = f.tell()
+
+            if print_success:
+                print(f"File '{filename}' successfully uploaded to Dropbox path: '{full_dropbox_path}'")
+        except Exception as e:
+            print(f"Failed to upload '{filename}' to Dropbox. Error: {e}")
+        
+
     def write_parquet(self, df: pd.DataFrame, dbx_path: str, directory: str, filename: str, print_success=True, print_size=True, index=True):
         """
         Saves a DataFrame to a Parquet file and uploads it to Dropbox.

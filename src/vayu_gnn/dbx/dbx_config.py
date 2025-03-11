@@ -586,7 +586,26 @@ class DropboxHelper:
         except Exception as e:
             print(f"Failed to upload Parquet file '{filename}' to Dropbox. Error: {e}")
 
+    def write_log(self, log_content: str, dbx_path: str, filename: str):
+        """
+        Writes a log string to Dropbox as a file.
 
+        Args:
+            log_content (str): The log content to upload.
+            dbx_path (str): The Dropbox path where the log will be saved.
+            filename (str): The name of the log file (e.g., 'logs.txt').
+        """
+        full_dropbox_path = f"{dbx_path}/{filename}"
+        try:
+            log_bytes = log_content.encode("utf-8")  # Convert string to bytes
+            self.dbx.files_upload(
+                log_bytes,
+                full_dropbox_path,
+                mode=dropbox.files.WriteMode.overwrite
+            )
+            print(f"Log file '{filename}' successfully uploaded to Dropbox at '{full_dropbox_path}'")
+        except Exception as e:
+            print(f"Failed to upload log file '{filename}' to Dropbox. Error: {e}")
 
 load_dotenv(override = True)
 dbx_helper = DropboxHelper(

@@ -3,8 +3,7 @@ import os
 
 from vayu_gnn.dbx.dbx_config import dbx_helper, DropboxHelper
 
-download_data = ['sensor_data'] #these correspond to the methods in the Downloader class (by constructions this also means the keys in download_params)
-#download_data = ['open_weather_pollution', 'weather', 'weather_forecast'] #these correspond to the methods in the Downloader class (by constructions this also means the keys in download_params)
+download_data = ['open_weather_pollution', 'weather', 'weather_forecast', 'sensor_data'] #these correspond to the methods in the Downloader class (by constructions this also means the keys in download_params)
 
 start_date = '2024-05-01'
 end_date = '2025-02-28'
@@ -13,7 +12,7 @@ nodes = {}
 nodes['Patna'] = dbx_helper.read_pickle(dbx_helper.clean_input_path, f'node_locations/Patna', f'nodes.pickle')
 # nodes['Gurugram'] = dbx_helper.read_pickle(dbx_helper.clean_input_path, f'node_locations/Gurugram', f'nodes.pickle')
 
-cities = ['Gurugram']
+cities = ['Patna']
 # cities = ['Patna', 'Gurugram']
 
 load_dotenv(override=True)

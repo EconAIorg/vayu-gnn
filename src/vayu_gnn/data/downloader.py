@@ -146,7 +146,7 @@ class Downloader():
 
             # Concatenate all DataFrames into a single DataFrame
             df = pd.concat(dataframes)
-            self.dbx_helper.write_csv(df, self.dbx_helper.clean_input_path, f'weather/{city}', f"weather.csv")
+            self.dbx_helper.write_csv(df, self.dbx_helper.raw_input_path, f'weather/{city}', f"weather.csv")
     
     def weather_forecast(self, api_params:dict):
 
@@ -219,7 +219,7 @@ class Downloader():
 
             # Concatenate all DataFrames into a single DataFrame
             df = pd.concat(dataframes)
-            self.dbx_helper.write_csv(df, self.dbx_helper.clean_input_path, f'weather_forecast/{city}', f"weather_forecast.csv")
+            self.dbx_helper.write_csv(df, self.dbx_helper.raw_input_path, f'weather_forecast/{city}', f"weather_forecast.csv")
 
     def open_weather_pollution(self, api_key):
 
@@ -289,4 +289,4 @@ class Downloader():
                 node_df['dt'] = node_df.dt.apply(unix_to_readable)
                 node_df = node_df.assign(node = node, lat = coords['lat'], long = coords['long'])
                 list_node_dfs.append(node_df)
-            self.dbx_helper.write_parquet(pd.concat(list_node_dfs), self.dbx_helper.clean_input_path, f'pollution/{city}', 'pollution.parquet') 
+            self.dbx_helper.write_parquet(pd.concat(list_node_dfs), self.dbx_helper.raw_input_path, f'pollution/{city}', 'pollution.parquet') 

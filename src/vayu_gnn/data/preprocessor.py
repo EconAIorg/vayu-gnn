@@ -18,13 +18,19 @@ class Preprocessor():
             self.node_ids[city] = list(nodes.keys())
 
         self.cities = cities
+        self.base_panels = self._create_base_panels()
 
-    def _create_feature_base_panels(self):
+    def _create_base_panels(self):
 
-        datetime_range = pd.date_range(start='2024-05-01', end='2025-02-27', freq='h')
-        feature_base_panels = {}
+        base_panels = {}
 
         for city in self.cities:
+
+            if city == 'Patna':
+                datetime_range = pd.date_range(start='2024-06-01', end='2025-02-27', freq='h')
+            if city == 'Gurugram':
+                datetime_range = pd.date_range(start='2024-07-01', end='2025-02-27', freq='h')
+
             complete_index = pd.MultiIndex.from_product(
                 [self.node_ids[city], datetime_range],
                 names=['node_id', 'datetime']
@@ -36,34 +42,13 @@ class Preprocessor():
             complete_df.drop(columns='datetime', inplace=True)
 
             complete_df = complete_df[complete_df['date'].astype(str) != '2025-02-27']
-            feature_base_panels[city] = complete_df
+            base_panels[city] = complete_df
 
-        return feature_base_panels
-            
-    def _create_sensor_base_panels(self):
+        return base_panels
 
-        datetime_range = pd.date_range(start='2024-06-01', end='2025-02-27', freq='h')
-        sensor_base_panels = {}
+    def sensor_data(self, device_types):
 
         for city in self.cities:
-            complete_index = pd.MultiIndex.from_product(
-                [self.node_ids[city], datetime_range],
-                names=['node_id', 'datetime']
-            )
-            
-            complete_df = complete_index.to_frame(index=False)
-            complete_df['date'] = complete_df['datetime'].dt.date
-            complete_df['hour'] = complete_df['datetime'].dt.hour
-            complete_df.drop(columns='datetime', inplace=True)
-
-            complete_df = complete_df[complete_df['date'].astype(str) != '2025-02-27']
-            sensor_base_panels[city] = complete_df
-
-        return sensor_base_panels
-
-    def sensor_data(self, cities, device_types):
-
-        for city in cities:
 
             for device_type in device_types:
                 print(f"Processing {device_type} sensor data for {city}")
@@ -82,28 +67,8 @@ class Preprocessor():
                 hourly_df = hourly_df.rename(columns={'device_name': 'node_id'})
                 hourly_df = hourly_df.sort_values(by=['node_id', 'date', 'hour'])
 
-                # Ensure 'date' is datetime
-                hourly_df['date'] = pd.to_datetime(hourly_df['date'])
-
                 ## Expanding the number of rows to include all hours in the date range ##
-
-                # Define hourly date range from 2024-06-01 00:00:00 to 2025-02-28 23:00:00
-                datetime_range = pd.date_range(start='2024-06-01', end='2025-02-28', freq='h')
-
-                # Cartesian product of node_ids and datetime range
-                complete_index = pd.MultiIndex.from_product(
-                    [hourly_df['node_id'].unique(), datetime_range],
-                    names=['node_id', 'datetime']
-                )
-
-                complete_df = complete_index.to_frame(index=False)
-                complete_df['date'] = complete_df['datetime'].dt.date
-                complete_df['hour'] = complete_df['datetime'].dt.hour
-                complete_df.drop(columns='datetime', inplace=True)
-
-                complete_df['date'] = pd.to_datetime(complete_df['date'])
-
-                merged_hourly_df = pd.merge(complete_df, hourly_df, on=['node_id', 'date', 'hour'], how='left')
+                merged_hourly_df = pd.merge(self.base_panels[city], hourly_df, on=['node_id', 'date', 'hour'], how='left')
 
                 # Add binary missing flags to be used as masks in the GNN loss function
                 for col in merged_hourly_df.columns:
@@ -114,12 +79,11 @@ class Preprocessor():
                 merged_hourly_df = merged_hourly_df.rename(columns={'m_temp': 'm_senor_reading'})
                 merged_hourly_df = merged_hourly_df.fillna(0)
 
-                merged_hourly_df['date'] = merged_hourly_df['date'].dt.date
                 merged_hourly_df = merged_hourly_df.sort_values(by=['node_id', 'date', 'hour'])
 
                 self.dbx_helper.write_parquet(merged_hourly_df, self.dbx_helper.clean_input_path, f'sensor_data/{city}', f"{device_type}_sensor_data_hourly.parquet")
 
-    def raster_data(self, cities, raster_files):
+    def raster_data(self, raster_files):
 
         ### First combine raster tiles for Global Human Settlement data ###
         def combine_and_upload_tifs(tif1, tif2, directory: str, filename: str):
@@ -240,7 +204,7 @@ class Preprocessor():
             data = [{"node_id": device_id, stat_col_name: summary} for device_id, summary in results.items()]
             return pd.DataFrame(data)
 
-        for city in cities:
+        for city in self.cities:
 
             devices = self.dbx_helper.read_shp(self.dbx_helper.clean_input_path, f'node_locations/{city}/gdf')
 
@@ -251,7 +215,7 @@ class Preprocessor():
                 
                     print(f'Calculating {file}')
                     result = pixel_sum_around_point(devices, tif, 'elevation', buffer_distance=0)
-                    self.dbx_helper.write_csv(result, dbx_helper.clean_input_path, f'{file}/{city}', f'{file}.csv')
+                    self.dbx_helper.write_parquet(result, dbx_helper.clean_input_path, f'{file}/{city}', f'{file}.parquet')
 
                 else:
 
@@ -263,11 +227,11 @@ class Preprocessor():
             
                         stat_col_name = 'sum_' + file + '_buffer_' + str(buffer)
                         result = pixel_sum_around_point(devices, tif, stat_col_name, buffer_distance=buffer)
-                        self.dbx_helper.write_csv(result, self.dbx_helper.clean_input_path, f'settlement/{city}', f'{file}_b{buffer}.csv')
+                        self.dbx_helper.write_parquet(result, self.dbx_helper.clean_input_path, f'settlement/{city}', f'{file}_b{buffer}.parquet')
             
-    def weather(self, cities):
+    def weather(self):
 
-        for city in cities:
+        for city in self.cities:
             df = self.dbx_helper.read_csv(self.dbx_helper.raw_input_path, f'weather/{city}', f"weather.csv")
 
             # Create date and hour columns from 'date'
@@ -282,13 +246,15 @@ class Preprocessor():
             df.columns = [f'a_{col}' if col not in ['node', 'date', 'hour'] else col for col in df.columns]
             df = df.rename(columns={'node': 'node_id'})
 
-            self._assert_all_combos(df)
+            # Merge on the base panels to ensure all hours are present
+            df = pd.merge(self.base_panels[city], df, on=['node_id', 'date', 'hour'], how='left')
+            assert df['a_temperature'].isnull().sum() == 0
 
             self.dbx_helper.write_parquet(df, self.dbx_helper.clean_input_path, f'weather/{city}', f"weather.parquet")
 
-    def weather_forecast(self, cities):
+    def weather_forecast(self):
         
-        for city in cities:
+        for city in self.cities:
             df = self.dbx_helper.read_csv(self.dbx_helper.raw_input_path, f'weather_forecast/{city}', f"weather_forecast.csv")
 
             # Create date and hour columns from 'date'
@@ -303,13 +269,15 @@ class Preprocessor():
             df.columns = [f'f_{col}' if col not in ['node', 'date', 'hour'] else col for col in df.columns]
             df = df.rename(columns={'node': 'node_id'})
 
-            self._assert_all_combos(df)
+            # Merge on the base panels to ensure all hours are present
+            df = pd.merge(self.base_panels[city], df, on=['node_id', 'date', 'hour'], how='left')
+            assert df['f_temperature'].isnull().sum() == 0
 
             self.dbx_helper.write_parquet(df, self.dbx_helper.clean_input_path, f'weather_forecast/{city}', f"weather_forecast.parquet")
 
-    def open_weather_pollution(self, cities):
+    def open_weather_pollution(self):
         
-      for city in cities:  
+      for city in self.cities:  
         df = self.dbx_helper.read_parquet(dbx_helper.raw_input_path, f'pollution/{city}', 'pollution.parquet') 
 
         # Create date and hour columns from 'date'
@@ -326,7 +294,9 @@ class Preprocessor():
         # Add ow_ prefix to represent 'open_weather' pollution values
         df.columns = [f'ow_{col}' if col not in ['node_id', 'date', 'hour'] else col for col in df.columns]
 
-        self._assert_all_combos(df)
+        # Merge on the base panels to ensure all hours are present
+        df = pd.merge(self.base_panels[city], df, on=['node_id', 'date', 'hour'], how='left')
+        assert df['ow_aqi'].isnull().sum() == 0
 
         self.dbx_helper.write_parquet(df, self.dbx_helper.clean_input_path, f'pollution/{city}', f"pollution.parquet")
 

@@ -10,10 +10,9 @@ end_date = '2025-02-28'
 
 nodes = {}
 nodes['Patna'] = dbx_helper.read_pickle(dbx_helper.clean_input_path, f'node_locations/Patna', f'nodes.pickle')
-# nodes['Gurugram'] = dbx_helper.read_pickle(dbx_helper.clean_input_path, f'node_locations/Gurugram', f'nodes.pickle')
+nodes['Gurugram'] = dbx_helper.read_pickle(dbx_helper.clean_input_path, f'node_locations/Gurugram', f'nodes.pickle')
 
-cities = ['Patna']
-# cities = ['Patna', 'Gurugram']
+cities = ['Patna', 'Gurugram']
 
 load_dotenv(override=True)
 OPEN_WEATHER_API_KEY = os.getenv('OPEN_WEATHER_API_KEY')

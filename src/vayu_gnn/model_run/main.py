@@ -32,9 +32,9 @@ try:
         preprocess_timer = StepTimer() 
 
         from vayu_gnn.pipeline.b_preprocess import execute as execute_preprocess
-        from vayu_gnn.model_run.setup.preprocessor_params import preprocess_data, preprocess_params
+        from vayu_gnn.model_run.setup.preprocessor_params import preprocess_data, preprocess_params, nodes, cities
 
-        execute_preprocess(dbx_helper=dbx_helper, preprocess_data=preprocess_data, preprocessor_params=preprocess_params)
+        execute_preprocess(dbx_helper=dbx_helper, preprocess_data=preprocess_data, preprocessor_params=preprocess_params, nodes=nodes, cities=cities)
 
         preprocess_timer.stop('preprocessing')
 

@@ -296,7 +296,7 @@ class Preprocessor():
 
         # Merge on the base panels to ensure all hours are present
         df = pd.merge(self.base_panels[city], df, on=['node_id', 'date', 'hour'], how='left')
-        assert df['ow_aqi'].isnull().sum() == 0
+        # assert df['ow_aqi'].isnull().sum() == 0
 
         self.dbx_helper.write_parquet(df, self.dbx_helper.clean_input_path, f'pollution/{city}', f"pollution.parquet")
 

@@ -14,6 +14,7 @@ dependencies = [
     "matplotlib>=3.10.0,<4",
     "seaborn>=0.13.2,<0.14",
     "pyarrow>=19.0.1,<20",
+    "folium",
     "google-api-python-client>=2.162.0,<3",
     "google-auth-httplib2>=0.2.0,<0.3",
     "google-auth-oauthlib>=1.2.1,<2",
@@ -56,12 +57,12 @@ torch-sparse = [
 ]
 
 torch-scatter = [
-    { url = "https://data.pyg.org/whl/torch-2.0.0+cpu/torch_scatter-0.6.18+pt20cpu-cp310-cp310-linux_x86_64.whl", marker = "platform_system == 'Linux'" },
-    { url = "https://data.pyg.org/whl/torch-2.0.0+cpu/torch_scatter-0.6.18+pt20cpu-cp310-cp310-win_amd64.whl", marker = "platform_system == 'Windows' and platform_machine == 'AMD64'" },
+    { url = "https://data.pyg.org/whl/torch-2.0.0+cpu/torch_scatter-2.1.2+pt20cpu-cp310-cp310-linux_x86_64.whl", marker = "platform_system == 'Linux'" },
+    { url = "https://data.pyg.org/whl/torch-2.0.0+cpu/torch_scatter-2.1.2+pt20cpu-cp310-cp310-win_amd64.whl", marker = "platform_system == 'Windows' and platform_machine == 'AMD64'" },
     { url = "https://data.pyg.org/whl/torch-2.0.0+cpu/torch_scatter-2.1.2-cp310-cp310-macosx_11_0_x86_64.whl", marker = "platform_system == 'Darwin' and platform_machine == 'x86_64'" }
 ]
 
 
 [build-system]
-requires = ["hatchling", "torch"]
+requires = ["hatchling", "torch", "numpy"]
 build-backend = "hatchling.build"

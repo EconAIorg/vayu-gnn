@@ -1,2 +1,3 @@
 download_bool = False
-preprocess_bool = True
+preprocess_bool = False
+create_stdata = True

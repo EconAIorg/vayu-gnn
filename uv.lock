@@ -1,4 +1,5 @@
 version = 1
+revision = 1
 requires-python = "==3.10.*"
 resolution-markers = [
     "sys_platform == 'linux'",
@@ -1666,6 +1667,7 @@ requires-dist = [
     { name = "dotenv", specifier = ">=0.9.9,<0.10" },
     { name = "dropbox", specifier = ">=12.0.2,<13" },
     { name = "feature-engine", specifier = ">=1.8.3,<2" },
+    { name = "folium" },
     { name = "folium", specifier = ">=0.19.5" },
     { name = "geopandas", specifier = ">=1.0.1,<2" },
     { name = "google-api-python-client", specifier = ">=2.162.0,<3" },

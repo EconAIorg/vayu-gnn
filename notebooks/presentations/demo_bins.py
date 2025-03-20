@@ -5,31 +5,31 @@ import folium
 from streamlit_folium import st_folium
 from branca.colormap import StepColormap
 
-# ----- Generate Random Data -----
+# # ----- Generate Random Data For Testing -----
 
-# Nodes around central Patna
-np.random.seed(42)
-n_nodes = 30
-center_lat, center_lon = 25.5941, 85.1376
-nodes = pd.DataFrame({
-    'node_id': [f'Node {i+1}' for i in range(n_nodes)],
-    'lat': center_lat + np.random.uniform(-0.05, 0.05, n_nodes),
-    'lon': center_lon + np.random.uniform(-0.05, 0.05, n_nodes)
-})
+# # Nodes around central Patna
+# np.random.seed(42)
+# n_nodes = 30
+# center_lat, center_lon = 25.5941, 85.1376
+# nodes = pd.DataFrame({
+#     'node_id': [f'Node {i+1}' for i in range(n_nodes)],
+#     'lat': center_lat + np.random.uniform(-0.05, 0.05, n_nodes),
+#     'lon': center_lon + np.random.uniform(-0.05, 0.05, n_nodes)
+# })
 
-# Dates, hours, prediction horizons, pollutants
-dates = pd.date_range('2025-03-01', periods=7)
-hours = np.arange(24)
-horizons = np.arange(1, 9)
-pollutants = ['PM2.5', 'PM10', 'NO2', 'CO', 'CO2', 'CH4']
+# # Dates, hours, prediction horizons, pollutants
+# dates = pd.date_range('2025-03-01', periods=7)
+# hours = np.arange(24)
+# horizons = np.arange(1, 9)
+# pollutants = ['PM2.5', 'PM10', 'NO2', 'CO', 'CO2', 'CH4']
 
-# Create random pollution data
-multi_idx = pd.MultiIndex.from_product(
-    [dates, hours, horizons, pollutants, nodes['node_id']],
-    names=['date', 'hour', 'horizon', 'pollutant', 'node_id']
-)
-pollution_df = pd.DataFrame(index=multi_idx).reset_index()
-pollution_df['value'] = np.random.uniform(10, 1000, len(pollution_df))
+# # Create random pollution data
+# multi_idx = pd.MultiIndex.from_product(
+#     [dates, hours, horizons, pollutants, nodes['node_id']],
+#     names=['date', 'hour', 'horizon', 'pollutant', 'node_id']
+# )
+# pollution_df = pd.DataFrame(index=multi_idx).reset_index()
+# pollution_df['value'] = np.random.uniform(10, 1000, len(pollution_df))
 
 # ----- Streamlit App -----
 

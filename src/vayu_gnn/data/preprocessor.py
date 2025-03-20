@@ -8,9 +8,35 @@ from rasterio.io import MemoryFile
 from vayu_gnn.dbx.dbx_config import dbx_helper
 
 class Preprocessor():
+    """
+    Preprocessor for sensor, raster, and weather data.
 
+    This class handles preprocessing steps for sensor data, raster data, weather data, weather forecasts,
+    and pollution data. It reads raw input files from Dropbox using a helper, processes them,
+    and writes cleaned data back to Dropbox. It also creates base data panels for merging data on a common timeline.
+
+    Parameters
+    ----------
+    dbx_helper : object
+        Helper object for interacting with Dropbox.
+    nodes : dict
+        Dictionary of node configurations per city.
+    cities : list
+        List of cities to process.
+    """
     def __init__(self, dbx_helper, nodes:dict, cities:list):
+        """
+        Initialize the Preprocessor.
 
+        Parameters
+        ----------
+        dbx_helper : object
+            Helper object for Dropbox interactions.
+        nodes : dict
+            Dictionary mapping city names to node configurations.
+        cities : list
+            List of city names to be processed.
+        """
         self.dbx_helper = dbx_helper
         self.nodes = nodes
         self.node_ids = {}
@@ -21,7 +47,17 @@ class Preprocessor():
         self.base_panels = self._create_base_panels()
 
     def _create_base_panels(self):
+        """
+        Create base data panels for each city.
 
+        Constructs a complete DataFrame for each city that includes every combination of node IDs and hourly timestamps
+        over a specified date range, excluding the final day.
+
+        Returns
+        -------
+        dict
+            A dictionary mapping each city to its corresponding base panel DataFrame.
+        """
         base_panels = {}
 
         for city in self.cities:
@@ -47,7 +83,17 @@ class Preprocessor():
         return base_panels
 
     def sensor_data(self, device_types):
+        """
+        Process and aggregate sensor data for specified device types.
 
+        For each city and device type, this method reads sensor CSV data, converts timestamps,
+        groups data by device and hour, and merges with the base panel. It also adds binary flags for missing data.
+
+        Parameters
+        ----------
+        device_types : list
+            List of device types to process.
+        """
         for city in self.cities:
 
             for device_type in device_types:
@@ -84,17 +130,39 @@ class Preprocessor():
                 self.dbx_helper.write_parquet(merged_hourly_df, self.dbx_helper.clean_input_path, f'sensor_data/{city}', f"{device_type}_sensor_data_hourly.parquet")
 
     def raster_data(self, raster_files):
+        """
+        Process raster data by combining TIFF files and calculating raster summary statistics.
 
+        This method performs several operations:
+        - Merges and uploads TIFF files for building area and volume data.
+        - Calculates summary statistics from raster files for elevation and settlement data by sampling or buffering.
+
+        Parameters
+        ----------
+        raster_files : list
+            List of raster file identifiers to process.
+        """
         ### First combine raster tiles for Global Human Settlement data ###
         def combine_and_upload_tifs(tif1, tif2, directory: str, filename: str):
             """
-            Combines two in-memory TIFF files (side-by-side) and uploads the resulting mosaic to Dropbox.
-            
-            Args:
-                tif1 (BytesIO): The first TIFF file in-memory.
-                tif2 (BytesIO): The second TIFF file in-memory.
-                directory (str): The directory within the base Dropbox path where the file will be saved.
-                filename (str): The name of the output combined TIFF file.
+            Combine two in-memory TIFF files and upload the mosaic to Dropbox.
+
+            The two TIFF files are merged side-by-side and the resulting mosaic is uploaded.
+
+            Parameters
+            ----------
+            tif1 : BytesIO
+                First TIFF file in-memory.
+            tif2 : BytesIO
+                Second TIFF file in-memory.
+            directory : str
+                Directory path within the base Dropbox path.
+            filename : str
+                Output filename for the combined TIFF.
+
+            Returns
+            -------
+            None
             """
             if tif1 is None or tif2 is None:
                 print("Failed to load one of the files.")
@@ -149,20 +217,25 @@ class Preprocessor():
         ### Next, 
         def pixel_sum_around_point(gdf, raster_bytes, stat_col_name, buffer_distance=0):
             """
-            Returns a DataFrame with each device's identifier and its corresponding raster summary statistic.
-            
-            For single-band rasters, when buffer_distance is 0, the raster value is sampled exactly at the point.
-            If buffer_distance > 0, a buffer polygon is created around the point, pixels within that area are extracted,
-            and their values are summed.
-            
-            Args:
-                gdf (GeoDataFrame): A GeoDataFrame containing device geometries (Points) and an optional
-                                    'device_id' column. If missing, the index is used.
-                raster_bytes (BytesIO): The in-memory TIFF file (assumed to be single-band).
-                buffer_distance (float): The buffer distance (in CRS units). Set to 0 to sample the exact point.
-            
-            Returns:
-                DataFrame: A DataFrame with columns 'device_id' and 'summary_stat', where summary_stat is a scalar.
+            Calculate summary statistics from a raster around given points.
+
+            For single-band rasters, this function either samples the exact point value or sums pixel values within a buffer area.
+
+            Parameters
+            ----------
+            gdf : GeoDataFrame
+                GeoDataFrame containing device geometries (Points) and an optional 'device_id' column.
+            raster_bytes : BytesIO
+                In-memory TIFF file assumed to be single-band.
+            stat_col_name : str
+                Name for the summary statistic column.
+            buffer_distance : float, optional
+                Buffer distance around the point in CRS units (default is 0, which samples the exact point).
+
+            Returns
+            -------
+            DataFrame
+                DataFrame with columns 'node_id' and the summary statistic.
             """
             results = {}
             
@@ -230,6 +303,17 @@ class Preprocessor():
                         self.dbx_helper.write_parquet(result, self.dbx_helper.clean_input_path, f'settlement/{city}', f'{file}_b{buffer}.parquet')
             
     def weather(self):
+        """
+        Process and clean actual weather data.
+
+        Reads weather CSV data for each city, converts timestamps, merges with the base panel,
+        and writes the processed data to a parquet file.
+
+        Raises
+        ------
+        AssertionError
+            If there are missing temperature values after merging.
+        """
 
         for city in self.cities:
             df = self.dbx_helper.read_csv(self.dbx_helper.raw_input_path, f'weather/{city}', f"weather.csv")
@@ -253,7 +337,17 @@ class Preprocessor():
             self.dbx_helper.write_parquet(df, self.dbx_helper.clean_input_path, f'weather/{city}', f"weather.parquet")
 
     def weather_forecast(self):
-        
+        """
+        Process and clean weather forecast data.
+
+        Reads weather forecast CSV data for each city, converts timestamps, merges with the base panel,
+        and writes the processed data to a parquet file.
+
+        Raises
+        ------
+        AssertionError
+            If there are missing forecasted temperature values after merging.
+        """
         for city in self.cities:
             df = self.dbx_helper.read_csv(self.dbx_helper.raw_input_path, f'weather_forecast/{city}', f"weather_forecast.csv")
 
@@ -276,27 +370,37 @@ class Preprocessor():
             self.dbx_helper.write_parquet(df, self.dbx_helper.clean_input_path, f'weather_forecast/{city}', f"weather_forecast.parquet")
 
     def open_weather_pollution(self):
-        
-      for city in self.cities:  
-        df = self.dbx_helper.read_parquet(dbx_helper.raw_input_path, f'pollution/{city}', 'pollution.parquet') 
+        """
+        Process and clean open weather pollution data.
 
-        # Create date and hour columns from 'date'
-        df.rename(columns={'dt': 'date', 'node':'node_id'}, inplace=True)
-        df['date'] = pd.to_datetime(df['date'])
-        df['hour'] = df['date'].dt.hour
-        df['date'] = df['date'].dt.date
+        Reads pollution parquet data for each city, converts timestamps, filters data after a specific date,
+        merges with the base panel, and writes the processed data.
 
-        df = df[pd.to_datetime(df['date']) >= '2024-05-01']
+        Raises
+        ------
+        AssertionError
+            If there are missing pollution values after merging.
+        """  
+        for city in self.cities:  
+            df = self.dbx_helper.read_parquet(dbx_helper.raw_input_path, f'pollution/{city}', 'pollution.parquet') 
 
-        df = df[['node_id', 'date', 'hour', 'aqi', 'co', 'no', 'no2', 'o3', 'so2', 'pm2_5', 'pm10', 'nh3']]
-        df = df.sort_values(['node_id', 'date', 'hour'])
+            # Create date and hour columns from 'date'
+            df.rename(columns={'dt': 'date', 'node':'node_id'}, inplace=True)
+            df['date'] = pd.to_datetime(df['date'])
+            df['hour'] = df['date'].dt.hour
+            df['date'] = df['date'].dt.date
 
-        # Add ow_ prefix to represent 'open_weather' pollution values
-        df.columns = [f'ow_{col}' if col not in ['node_id', 'date', 'hour'] else col for col in df.columns]
+            df = df[pd.to_datetime(df['date']) >= '2024-05-01']
 
-        # Merge on the base panels to ensure all hours are present
-        df = pd.merge(self.base_panels[city], df, on=['node_id', 'date', 'hour'], how='left')
-        assert df['ow_aqi'].isnull().sum() == 0
+            df = df[['node_id', 'date', 'hour', 'aqi', 'co', 'no', 'no2', 'o3', 'so2', 'pm2_5', 'pm10', 'nh3']]
+            df = df.sort_values(['node_id', 'date', 'hour'])
 
-        self.dbx_helper.write_parquet(df, self.dbx_helper.clean_input_path, f'pollution/{city}', f"pollution.parquet")
+            # Add ow_ prefix to represent 'open_weather' pollution values
+            df.columns = [f'ow_{col}' if col not in ['node_id', 'date', 'hour'] else col for col in df.columns]
+
+            # Merge on the base panels to ensure all hours are present
+            df = pd.merge(self.base_panels[city], df, on=['node_id', 'date', 'hour'], how='left')
+            assert df['ow_aqi'].isnull().sum() == 0
+
+            self.dbx_helper.write_parquet(df, self.dbx_helper.clean_input_path, f'pollution/{city}', f"pollution.parquet")
 

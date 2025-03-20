@@ -25,12 +25,10 @@ dependencies = [
     "feature-engine>=1.8.3,<2",
     "panelsplit>=1.0.1,<2",
     "ipykernel>=6.29.5,<7",
-    "torch>=2.6.0",
-    "torch-spatiotemporal>=0.9.5,<0.10",
-    "torch-geometric>=2.6.1,<3",
-    "torch-sparse",
-    "torch-scatter",
     "tsl>=2.0",
+    "streamlit>=1.43.2",
+    "folium>=0.19.5",
+    "streamlit-folium>=0.24.0",
 ]
 
 [dependency-groups]

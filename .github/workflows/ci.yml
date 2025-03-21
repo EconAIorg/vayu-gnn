@@ -22,7 +22,6 @@ jobs:
 
       - name: Install dependencies for docs
         run: |
-          pip install -e .
           pip install pdoc
 
       - name: Generate API documentation with pdoc

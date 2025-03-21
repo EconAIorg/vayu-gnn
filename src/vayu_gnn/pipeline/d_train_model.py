@@ -3,12 +3,13 @@ import torch
 import io
 import pickle
 from vayu_gnn.dbx import dbx_helper  # Ensure this is correctly imported in your project
-from tsl.metrics.torch import MaskedMAE
+from tsl.metrics.torch import MaskedMAE, mae
 from tsl.engines import Predictor
 from pytorch_lightning import Trainer
 from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.callbacks import ModelCheckpoint
 from tsl.nn.models import RNNEncGCNDecModel  # Replace with the correct import
+from vayu_gnn.data import DataLoader
 
 
 class GNNPipeline:
@@ -37,6 +38,8 @@ class GNNPipeline:
             The city (or folder name) where the data module and predictor are stored.
         """
         self.city = city
+        self._sensors = DataLoader().node_locations(city = city)
+        self.n_tara_sensors = len([k for k in self._sensors.keys() if k.startswith('TARA')])
         self.dm = dbx_helper.load_torch(dbx_helper.output_path, city, 'data_module.pt')
         if self.dm is None:
             raise ValueError("Failed to load data module from Dropbox.")
@@ -159,6 +162,31 @@ class GNNPipeline:
         )
         return trainer, checkpoint_callback
 
+    def _stack_and_select_predictions(self, preds):
+        """
+        Combine predictions across batches and select the first N TARA sensors.
+
+        Parameters
+        ----------
+        preds : list of dict
+            List of batch outputs with keys 'y_hat', 'y', and 'mask'.
+
+        Returns
+        -------
+        tuple of torch.Tensor
+            Selected predictions, targets, and mask of shape (batch, horizon, sensors, pollutants).
+        """
+        combined_y_hat = torch.cat([p['y_hat'] for p in preds], dim=0)
+        combined_y = torch.cat([p['y'] for p in preds], dim=0)
+        combined_mask = torch.cat([p['mask'] for p in preds], dim=0)
+
+        selected_y_hat = combined_y_hat[:, :, :self.n_tara_sensors, :]
+        selected_y = combined_y[:, :, :self.n_tara_sensors, :]
+        selected_mask = combined_mask[:, :, :self.n_tara_sensors, :]
+
+        return selected_y_hat, selected_y, selected_mask
+
+
     def execute(self):
         """
         Execute the entire pipeline: setup data module, build model, train, test, and save the predictor.
@@ -192,14 +220,35 @@ class GNNPipeline:
         # 6. Train the model
         trainer.fit(predictor, datamodule=self.dm)
 
-        # 7. Load the best model, freeze it, and test
-        predictor.load_model(checkpoint_callback.best_model_path)
-        predictor.freeze()
-        trainer.test(predictor, datamodule=self.dm)
-
-        # 8. Set up data module for prediction stage
+        # 7. Setup data module for prediction stage
         self._setup_data_module(stage='predict')
 
-        # 9. Save the predictor to Dropbox using dbx_helper.save_torch
-        dbx_helper.save_torch(predictor, dbx_helper.output_path, self.city, 'predictor.pt')
+        # 8. Generate predictions using trainer.predict.
+        # Assume each batch prediction is a dict with keys: 'y_hat', 'y', and 'mask'.
+        preds = trainer.predict(dataloaders=self.dm.test_dataloader())
+
+        # 9. Stack predictions and select relevant nodes
+        selected_y_hat, selected_y, selected_mask = self._stack_and_select_predictions(preds)
+
+        # 10. Compute MAE per pollutant using the MaskedMAE metric.
+        # The pollutant dimension is assumed to be the 2nd axis (index 1).
+        mae_by_horizon_and_pollutant = torch.empty(self.dm.horizon, self.dm.n_channels)
+
+        for h in range(self.dm.horizon):
+            for p in range( self.dm.n_channels):
+                # Shape: (batch, nodes)
+                y_pred = selected_y_hat[:, h, :, p]
+                y_true = selected_y[:, h, :, p]
+                mask = selected_mask[:, h, :, p]
+                _mae = mae(y_pred, y_true, mask=mask)
+                mae_by_horizon_and_pollutant[h, p] = _mae
+
+        last_week = 24*7
+        most_recent_preds = predictor.predict_batch(self.dm.torch_dataset[-last_week:], )[:, :, :self.n_tara_sensors, :]
+
+        # Optionally, save the model's state dictionary to Dropbox.
+        model_state_dict = predictor.model.state_dict()
+        dbx_helper.write_pickle(mae_by_horizon_and_pollutant.numpy(), dbx_helper.output_path, self.city, 'mae_array.pickle')
+        dbx_helper.write_pickle(most_recent_preds, dbx_helper.output_path, self.city, 'predictions.pickle')
+        dbx_helper.save_torch(model_state_dict, dbx_helper.output_path, self.city, 'model_state_dict.pt')
 

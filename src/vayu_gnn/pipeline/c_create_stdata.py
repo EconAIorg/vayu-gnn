@@ -180,11 +180,13 @@ class CreateSpatioTemporalDataset:
         n_timesteps = datetime_index.nunique()
         n_nodes = df.node_id.nunique()
 
-        target_cols = ['pm_25', 'pm_10', 'no2', 'co', 'co2', 'ch4', 'rh']
-        target = df[target_cols].values.reshape((n_timesteps, n_nodes, 7 ))
+        target_cols = ['pm_25', 'pm_10', 'no2', 'co', 'co2', 'ch4']
+        target = df[target_cols].values.reshape((n_timesteps, n_nodes, len(target_cols) ))
 
-        mask_df = df[[col for col in df.columns if col.startswith('m_')]]
-        mask = mask_df.astype(bool).values.reshape((n_timesteps, n_nodes, 7))
+        mask_cols = ['m_' + col for col in target_cols]
+
+        mask_df = df[mask_cols]
+        mask = mask_df.astype(bool).values.reshape((n_timesteps, n_nodes, len(target_cols)))
 
         connectivity = self.gen_connectivity()
 

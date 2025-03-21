@@ -6,6 +6,8 @@ Air pollution poses serious health risks, especially in densely populated region
 
 This repository ([EconAI VAYU-GNN](https://github.com/EconAIorg/vayu-gnn)) showcases a forecasting use case built on VAYU sensor data, designed to predict hyperlocal air pollutant levels up to 8 hours into the future. The goal is to support local government advisory systems with fine-grained, real-time forecasts.
 
+If you would like to read the documentation for the repository, you can visit [this page](https://econaiorg.github.io/vayu-gnn/vayu_gnn.html)
+
 ---
 
 ## Data pipeline

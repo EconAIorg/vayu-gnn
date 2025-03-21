@@ -726,24 +726,14 @@ class DropboxHelper:
             print(f"Failed to load torch object from Dropbox. Error: {e}")
             return None
 
-
-import os
-from dotenv import load_dotenv
-
 load_dotenv(override=True)
 
-
-# DOCS_BUILD = os.getenv("DOCS_BUILD", "false").lower() in ("1", "true", "yes")
-
-# if DOCS_BUILD:
-#     dbx_helper = None
-# else:
-#     # Only import DropboxHelper if we're not generating docs.
-#     dbx_helper = DropboxHelper(
-#         dbx_token=os.getenv("DROPBOX_TOKEN"),
-#         dbx_key=os.getenv("DROPBOX_KEY"),
-#         dbx_secret=os.getenv("DROPBOX_SECRET"),
-#         input_path=os.getenv("INPUT_PATH"),
-#         output_path=os.getenv("OUTPUT_PATH"),
-#         custom_paths=False
-#     )
+# Only import DropboxHelper if we're not generating docs.
+dbx_helper = DropboxHelper(
+    dbx_token=os.getenv("DROPBOX_TOKEN"),
+    dbx_key=os.getenv("DROPBOX_KEY"),
+    dbx_secret=os.getenv("DROPBOX_SECRET"),
+    input_path=os.getenv("INPUT_PATH"),
+    output_path=os.getenv("OUTPUT_PATH"),
+    custom_paths=False
+)

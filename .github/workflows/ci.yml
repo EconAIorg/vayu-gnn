@@ -1,0 +1,37 @@
+name: CI
+permissions:
+  contents: write
+  
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies for docs
+        run: |
+          pip install -e .
+          pip install pdoc
+
+      - name: Generate API documentation with pdoc
+        run: |
+          rm -rf docs  # Remove old docs directory if it exists
+          pdoc src/vayu-gnn -o docs -d numpy --no-include-undocumented 
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./docs

@@ -6,3 +6,5 @@ pycache/
 
 # Ignore any .pyc files, which are compiled Python files
 *.pyc
+
+logs/

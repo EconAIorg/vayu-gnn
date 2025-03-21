@@ -1,6 +1,6 @@
 from vayu_gnn.dbx import dbx_helper
 from vayu_gnn.data import DataLoader
-from vayu_gnn.data.impute import OutlierImputer, SpatialKNNImputer
+from vayu_gnn.data.impute import ThresholdFilter, thresholds
 from tsl.data import SpatioTemporalDataset
 from sklearn.impute import KNNImputer
 from feature_engine.wrappers import SklearnTransformerWrapper
@@ -12,25 +12,39 @@ from tsl.data.datamodule import (SpatioTemporalDataModule,
 from tsl.data.preprocessing import RobustScaler
 from math import radians, sin, cos, sqrt, atan2
 import torch
+from tsl.data import WINDOW
 
 
 class CreateSpatioTemporalDataset:
     def __init__(self, city : str, params:dict, dbx_helper = dbx_helper, loader = DataLoader):
-        """Initialize for creation of SpatioTemporal Dataset
+        """
+        Initialize the class for creating a spatio-temporal dataset.
 
         Parameters
         ----------
-        dbx_helper : _type_
-            _description_
+        city : str
+            Name of the city to process.
         params : dict
-            _description_
+            Configuration parameters including window size, fractions, etc.
+        dbx_helper : object, optional
+            Helper object for file operations, by default uses `vayu_gnn.dbx.dbx_helper`.
+        loader : object, optional
+            Data loader object, by default uses `vayu_gnn.data.DataLoader`.
         """
         self.city = city
         self.dbx_helper = dbx_helper
         self.loader = DataLoader(dbx_helper=dbx_helper)
         self.__dict__.update(params)
-    
+
     def _impute(self):
+        """
+        Imputes missing values in pollution and sensor datasets using a KNN-based pipeline.
+
+        Notes
+        -----
+        Uses a fraction of the data for fitting and applies transformations to the full dataset.
+        Latitude and longitude information is temporarily added for imputation.
+        """
         # Determine the number of days in the dataset
         min_date = self.loader.dfs['sensor_data']['date'].min()
         max_date = self.loader.dfs['sensor_data']['date'].max()
@@ -46,90 +60,76 @@ class CreateSpatioTemporalDataset:
         self.loader.dfs['sensor_data'][['latitude', 'longitude']] = pd.DataFrame(self.loader.dfs['sensor_data'].node_id.map(locs).tolist())
 
         ### --- Pollution Data Imputation --- ###
-        reference = self.loader.dfs['sensor_data'].copy()
-        reference = (
-            reference.rename(columns={'pm_25': 'pm2_5', 'pm_10': 'pm10'})
-            .drop(columns=[col for col in reference.columns if col.startswith('m_')], errors='ignore')
-        )
-        reference.rename(
-            columns={col: 'ow_' + col for col in reference.columns if col not in ["node_id", "date", "hour", "latitude", "longitude"]},
-            inplace=True
-        )
-
         vars_to_transform = [col for col in self.loader.dfs['pollution'].columns if col not in ["node_id", "date", "hour", "latitude", "longitude"]]
 
-        # Split dataset for fitting
         pollution_fit_sample = self.loader.dfs['pollution'][self.loader.dfs['pollution']['date'] <= self.train_cutoff]
 
-        # Define imputation pipeline
         pollution_impute_pipe = Pipeline([
-            ('spatial_knn', SpatialKNNImputer(reference_data=reference)),
             ('knn', SklearnTransformerWrapper(KNNImputer(weights='distance'), variables=vars_to_transform))
         ], verbose=True)
 
-        # Fit on the subset, then transform the entire dataset
         pollution_impute_pipe.fit(pollution_fit_sample)
         self.loader.dfs['pollution'] = pollution_impute_pipe.transform(self.loader.dfs['pollution'])
-        print(self.loader.dfs['pollution'].isna().sum())
 
         ### --- Sensor Data Imputation --- ###
-        reference = self.loader.dfs['pollution'].copy()
-        reference.rename(
-            columns={col: col.removeprefix('ow_') for col in reference.columns},
-            inplace=True
-        )
-        reference.rename(columns={'pm2_5': 'pm_25', 'pm10': 'pm_10'}, inplace=True)
-
-        # Select training subset
         sensor_train = self.loader.dfs['sensor_data'][self.loader.dfs['sensor_data']['date'] <= self.train_cutoff]
 
-        # Define sensor pipeline
         vars_to_transform = [col for col in self.loader.dfs['sensor_data'].columns if col not in ["node_id", "date", "hour", "latitude", "longitude"]]
-        spatial_knn = SpatialKNNImputer(reference_data=reference)
         knn = SklearnTransformerWrapper(KNNImputer(weights='distance'), variables=vars_to_transform)
 
         sensor_impute_pipe = Pipeline([
-            ('outlier', OutlierImputer()),
-            # ('spatial_knn', spatial_knn),
+            ('threshold_filter', ThresholdFilter(thresholds = thresholds)),
             ('knn', knn)
         ], verbose=True)
 
-        # Fit on training subset, transform entire dataset
         sensor_impute_pipe.fit(sensor_train)
         self.loader.dfs['sensor_data'] = sensor_impute_pipe.transform(self.loader.dfs['sensor_data'])
         print(self.loader.dfs['sensor_data'].isna().sum())
 
-        # Drop latitude and longitude columns from one of the sources
         self.loader.dfs['sensor_data'].drop(columns=['latitude', 'longitude'], inplace=True)
-        # self.loader.dfs['pollution'].drop(columns=['latitude', 'longitude'], inplace=True)
 
     def create_single_df(self):
+        """
+        Loads, imputes, merges, and sorts multiple sources into a single DataFrame.
+
+        Returns
+        -------
+        DataFrame
+            Merged and cleaned DataFrame containing sensor and pollution data.
+        """
         self.loader.multi_load(sources = self.sources, city= self.city)
         self._impute()
         df = self.loader.multi_merge(remove_dfs=True)
         df.sort_values(['date','hour', 'node_id'], inplace=True)
 
-        # assert df.index.is_monotonically_increasing, "DataFrame should be monotonically increasing."
         self.dbx_helper.write_parquet(df, self.dbx_helper.clean_merged_input_path, self.city, 'merged.parquet')
 
         return df
-    
-    def gen_connectivity(self):
 
+    def gen_connectivity(self, distance_threshold_km=5.0):
+        """
+        Generates graph connectivity based on spatial proximity using Haversine distance.
+
+        Parameters
+        ----------
+        distance_threshold_km : float, optional
+            Distance threshold to define edges between nodes, by default 5.0
+
+        Returns
+        -------
+        tuple of torch.Tensor
+            A tuple containing edge indices and edge weights for the graph.
+        """
         locs = self.loader.node_locations(self.city)
 
-        # List node names and number of nodes
         node_names = list(sorted(locs.keys()))
         N = len(node_names)
 
-        # Create arrays of latitudes and longitudes
         lats = np.array([locs[node]["lat"] for node in node_names])
         lons = np.array([locs[node]["long"] for node in node_names])
 
-        # Function to compute Haversine distance (in kilometers)
         def haversine_distance(lat1, lon1, lat2, lon2):
             R = 6371.0  # Earth's radius in kilometers
-            # Convert degrees to radians
             lat1_rad, lon1_rad = radians(lat1), radians(lon1)
             lat2_rad, lon2_rad = radians(lat2), radians(lon2)
             dlat = lat2_rad - lat1_rad
@@ -138,83 +138,117 @@ class CreateSpatioTemporalDataset:
             c = 2 * atan2(sqrt(a), sqrt(1 - a))
             return R * c
 
-        # Create lists for edges and weights
         edge_index = [[], []]
         edge_weights = []
 
-        # Build fully connected graph (skip self-loops)
         for i in range(N):
             for j in range(N):
                 if i == j:
                     continue
                 dist = haversine_distance(lats[i], lons[i], lats[j], lons[j])
-                edge_index[0].append(i)
-                edge_index[1].append(j)
-                edge_weights.append(dist)
+                if dist <= distance_threshold_km:
+                    edge_index[0].append(i)
+                    edge_index[1].append(j)
+                    edge_weights.append(dist)
 
-        # Convert lists to torch tensors
+        if len(edge_weights) == 0:
+            print("Warning: No edges were added. Consider increasing the distance threshold.")
+
         edge_index = torch.tensor(edge_index, dtype=torch.long)
         edge_weight = torch.tensor(edge_weights, dtype=torch.float)
 
-        # The connectivity object to be passed to the spatiotemporal graph is:
         connectivity = (edge_index, edge_weight)
-
         return connectivity
-    
+
     def gen_spatio_temporal_dataset(self, df):
-        # Get DateTime index and n_nodes
+        """
+        Converts a DataFrame into a SpatioTemporalDataset suitable for GNN models.
+
+        Parameters
+        ----------
+        df : DataFrame
+            Merged and imputed dataset.
+
+        Returns
+        -------
+        SpatioTemporalDataset
+            A TSL-formatted dataset containing temporal, spatial, and covariate information.
+        """
         index_cols = ['date','hour','node_id']
         datetime_index = pd.DatetimeIndex(pd.to_datetime(df.date) + pd.to_timedelta(df.hour, unit="h"))
         dt_index = datetime_index.unique()
         n_timesteps = datetime_index.nunique()
         n_nodes = df.node_id.nunique()
 
-        # Generate target array
-        target_cols = ['pm_25', 'pm_10', 'no2', 'co', 'co2', 'ch4', 'rh']
-        target = df[target_cols].values.reshape((n_timesteps, n_nodes, 7 ))
+        target_cols = ['pm_25', 'pm_10', 'no2', 'co', 'co2', 'ch4']
+        target = df[target_cols].values.reshape((n_timesteps, n_nodes, len(target_cols) ))
 
-        # Generate mask array
-        mask_df = df[[col for col in df.columns if col.startswith('m_')]]
-        mask = mask_df.astype(bool).values.reshape((n_timesteps, n_nodes, 7))
+        mask_cols = ['m_' + col for col in target_cols]
 
-        # Connectivity
+        mask_df = df[mask_cols]
+        mask = mask_df.astype(bool).values.reshape((n_timesteps, n_nodes, len(target_cols)))
+
         connectivity = self.gen_connectivity()
 
-        # Covariates
-        covariate_cols = [col for col in df.columns not in target_cols + index_cols]
-        covariates = df[covariate_cols].values.reshape((n_timesteps, n_nodes, len(covariate_cols)))
+        covariate_cols = df.columns.difference(set(target_cols + index_cols))
+        covariates = {}
+        for i, col in enumerate(covariate_cols):
+            col_data = df[col].values.reshape(n_timesteps, n_nodes)
+            covariates[col] = col_data
 
-        torch_dataset = SpatioTemporalDataset(target = target  , index = dt_index, mask = mask, connectivity = connectivity, covariates = covariates, 
-                        horizon=self.horizon, window=self.window, stride=self.stride)
-        
+        input_map = {
+            "x": (["target"], WINDOW),
+            "u": (list(covariates.keys()), WINDOW),
+        }
+
+        torch_dataset = SpatioTemporalDataset(
+            target=target,
+            index=dt_index,
+            mask=mask,
+            connectivity=connectivity,
+            covariates=covariates,
+            horizon=self.horizon,
+            window=self.window,
+            stride=self.stride,
+            input_map=input_map
+        )
+
         return torch_dataset
-    
-    def gen_data_module(self, torch_dataset):
-        # Normalize data using mean and std computed over time and node dimensions
-        scalers = {'target': RobustScaler(axis=(0, 1))}
 
-        # Split data sequentially:
-        #   |------------ dataset -----------|
-        #   |--- train ---|- val -|-- test --|
+    def gen_data_module(self, torch_dataset):
+        """
+        Wraps a SpatioTemporalDataset into a DataModule with normalization and sequential splitting.
+
+        Parameters
+        ----------
+        torch_dataset : SpatioTemporalDataset
+            The dataset to wrap and prepare for training.
+
+        Returns
+        -------
+        SpatioTemporalDataModule
+            The data module with scaling and data splitting applied.
+        """
+        scalers = {'target': RobustScaler(axis=(0, 1))}
+        cov_cols = torch_dataset.covariates.keys()
+        scalers.update({cov:RobustScaler(axis=(0, 1)) for cov in cov_cols})
+
         splitter = TemporalSplitter(val_len=self.validation_frac, test_len=self.test_frac)
+
         dm = SpatioTemporalDataModule(dataset=torch_dataset, scalers=scalers, splitter=splitter, batch_size=64)
 
         return dm
-    
+
     def execute(self):
+        """
+        Executes the full pipeline: load, impute, merge, transform, and save.
+
+        Returns
+        -------
+        None
+        """
         merged_df = self.create_single_df()
-        torch_dataset = self.load_into_spatio_temporal_dataset(merged_df)
+        # merged_df = self.dbx_helper.read_parquet(self.dbx_helper.clean_merged_input_path, self.city,'merged.parquet')
+        torch_dataset = self.gen_spatio_temporal_dataset(merged_df)
         dm = self.gen_data_module(torch_dataset)
-        self.dbx_helper.write_pickle(dm, self.dbx_helper.output_path, self.city, 'data_module.pickle')
-
-
-
-
-
-
-
-
-
-        
-        
-
+        self.dbx_helper.save_torch(dm, self.dbx_helper.output_path, self.city, 'data_module.pt')

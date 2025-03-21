@@ -36,6 +36,7 @@ jobs:
 
       - name: Generate API documentation with pdoc
         run: |
+          source .venv/bin/activate
           rm -rf docs  # Remove old docs directory if it exists
           pdoc src/vayu_gnn -o docs -d numpy --no-include-undocumented 
 

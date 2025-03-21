@@ -6,6 +6,8 @@ params['cities'] = ['Patna', 'Gurugram']
 
 # Sources for creating single df
 params['sources'] = ["sensor_data","pollution", "elevation", "weather", "weather_forecast", "settlements"]
+params['sources'] = ["sensor_data","pollution", "weather",]
+
 
 params['skip_length'] = [3, 24]
 params['n_skip_connections'] = [2, 2]

@@ -7,7 +7,7 @@ capture_logs = CaptureLogs(dbx_helper=dbx_helper, dbx_path="/output/logs")
 
 try:
 
-    from vayu_gnn.model_run.setup.execution_params import download_bool, preprocess_bool, create_stdata
+    from vayu_gnn.model_run.setup.execution_params import download_bool, preprocess_bool, create_stdata, train_model
 
     # Overall time and a timer for each process initialized
     full_timer = StepTimer()
@@ -53,6 +53,19 @@ try:
             dataset_creator.execute()
         
         create_stdata_timer.stop('data creation')
+
+    if train_model:
+        model_timer = StepTimer() 
+
+        from vayu_gnn.pipeline.d_train_model import GNNPipeline
+        from vayu_gnn.model_run.setup.train_model_params import params as train_model_params
+
+        for city in train_model_params['cities']:
+
+            gnn_pipe = GNNPipeline(city=city)
+            gnn_pipe.execute()
+        
+        model_timer.stop('training model')
 
     full_timer.stop('full pipeline')
 

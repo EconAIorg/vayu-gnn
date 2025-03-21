@@ -28,7 +28,7 @@ jobs:
 
       - name: Install dependencies for docs
         run: |
-          uv pip install -r pyrproject.toml
+          uv pip install -r pyproject.toml
           uv pip install -e .
           uv pip install pdoc
 

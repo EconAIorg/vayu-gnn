@@ -727,17 +727,23 @@ class DropboxHelper:
             return None
 
 
+import os
+from dotenv import load_dotenv
+
+load_dotenv(override=True)
 
 
-if not os.getenv("DOCS_BUILD", "false").lower() in ("1", "true", "yes"):
-    from .helper import DropboxHelper  # adjust if needed
+DOCS_BUILD = os.getenv("DOCS_BUILD", "false").lower() in ("1", "true", "yes")
+
+if not DOCS_BUILD:
+    from .dropbox_helper import DropboxHelper  # Adjust to actual filename
     dbx_helper = DropboxHelper(
         dbx_token=os.getenv("DROPBOX_TOKEN"),
         dbx_key=os.getenv("DROPBOX_KEY"),
         dbx_secret=os.getenv("DROPBOX_SECRET"),
-        input_path=f"{os.getenv('INPUT_PATH')}",
+        input_path=os.getenv("INPUT_PATH"),
         output_path=os.getenv("OUTPUT_PATH"),
         custom_paths=False
     )
 else:
-    dbx_helper = None  # Optional fallback
+    dbx_helper = None

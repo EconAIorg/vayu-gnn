@@ -9,7 +9,7 @@ import tempfile
 import geopandas as gpd
 import logging
 import json
-import torch 
+#import torch 
 
 
 class DropboxHelper:

@@ -38,8 +38,8 @@ class GNNPipeline:
             The city (or folder name) where the data module and predictor are stored.
         """
         self.city = city
-        self._sensors = DataLoader().node_locations(city = city)
-        self.n_tara_sensors = len([k for k in self._sensors.keys() if k.startswith('TARA')])
+        self.tara_sensors = [node for node in sorted(DataLoader().node_locations('Patna').keys()) if node.startswith('TARA')]
+        self.n_tara_sensors = len(self.tara_sensors)
         self.dm = dbx_helper.load_torch(dbx_helper.output_path, city, 'data_module.pt')
         if self.dm is None:
             raise ValueError("Failed to load data module from Dropbox.")
@@ -185,6 +185,34 @@ class GNNPipeline:
         selected_mask = combined_mask[:, :, :self.n_tara_sensors, :]
 
         return selected_y_hat, selected_y, selected_mask
+    def convert_tensor_to_df(self, preds):
+        n_timesteps = preds.shape[0]
+        n_horizons = preds.shape[1]
+        # n_nodes = preds.shape[2]
+        # n_pollutants = preds.shape[3]
+        
+        horizons = list(range(1, n_horizons + 1))
+        pollutants = ['pm_25', 'pm_10', 'no2', 'co', 'co2', 'ch4']
+        timesteps = self.dm.torch_dataset.index[-n_timesteps:]
+        nodes = self.tara_sensors
+
+        # 2. Convert tensor to numpy array and reshape
+        preds_np = preds.detach().numpy().reshape(-1)
+        
+        # 3. Create a MultiIndex
+        multi_index = pd.MultiIndex.from_product(
+            [timesteps, horizons, nodes, pollutants],
+            names=["timestep", "horizon", "node_id", "pollutant"]
+        )
+        
+        # 4. Create DataFrame
+        df = pd.Series(preds_np, index=multi_index).to_frame()
+
+        df['hour'] = df.index.get_level_values('timestep').hour
+        df['date'] = df.index.get_level_values('timestep').date
+
+        df = df.reset_index().set_index(['date','hour','node_id','horizon']).drop(columns='timestep').pivot(columns='pollutant', values=0)
+        return df
 
 
     def execute(self):
@@ -246,9 +274,10 @@ class GNNPipeline:
         last_week = 24*7
         most_recent_preds = predictor.predict_batch(self.dm.torch_dataset[-last_week:], )[:, :, :self.n_tara_sensors, :]
 
-        # Optionally, save the model's state dictionary to Dropbox.
+        pred_df = self.convert_tensor_to_df(most_recent_preds)
+
         model_state_dict = predictor.model.state_dict()
         dbx_helper.write_pickle(mae_by_horizon_and_pollutant.numpy(), dbx_helper.output_path, self.city, 'mae_array.pickle')
-        dbx_helper.write_pickle(most_recent_preds, dbx_helper.output_path, self.city, 'predictions.pickle')
+        dbx_helper.write_parquet(pred_df, dbx_helper.output_path, self.city, 'predictions.parquet')
         dbx_helper.save_torch(model_state_dict, dbx_helper.output_path, self.city, 'model_state_dict.pt')
 
